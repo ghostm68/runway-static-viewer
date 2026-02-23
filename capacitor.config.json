@@ -1,0 +1,12 @@
+{
+  "appId": "runway",
+  "appName": "runway",
+  "webDir": "dist",
+  "server": {
+    "url": "https://859e2d20-f99e-47a8-bd9d-f96c4e49f637.lovableproject.com?forceHideBadge=true",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}
