@@ -35,24 +35,21 @@ jobs:
       - name: Build web app
         run: npm run build
 
-      - name: Install Capacitor tools
-        run: |
-          npm install -g @capacitor/cli
-          npm install --save-dev @capacitor/assets
-
       - name: Add Android platform
         run: npx cap add android || true
 
-      - name: Generate Android icons with capacitor-assets
-        run: npx @capacitor/assets generate --android --iconBackgroundColor '#0D0D0D' --iconBackgroundColorDark '#0D0D0D' || echo "capacitor-assets failed, using fallback"
+      - name: Sync Capacitor
+        run: npx cap sync android
 
-      - name: Fallback - manually place icons if generation failed
+      - name: Generate icons
         run: |
-          # Ensure icon directories exist
           ICON_SRC="resources/icon.png"
           if [ ! -f "$ICON_SRC" ]; then
             ICON_SRC="public/icon.png"
           fi
+
+          # Install ImageMagick if not available
+          which convert || sudo apt-get install -y imagemagick
 
           declare -A SIZES=(
             ["mdpi"]=48
@@ -65,44 +62,32 @@ jobs:
           for density in "${!SIZES[@]}"; do
             DIR="android/app/src/main/res/mipmap-${density}"
             mkdir -p "$DIR"
-            # Only copy if icon wasn't already generated
-            if [ ! -f "$DIR/ic_launcher.png" ]; then
-              # Use ImageMagick to resize (available on ubuntu-latest)
-              SIZE=${SIZES[$density]}
-              convert "$ICON_SRC" -resize ${SIZE}x${SIZE} "$DIR/ic_launcher.png"
-              cp "$DIR/ic_launcher.png" "$DIR/ic_launcher_round.png"
-              cp "$DIR/ic_launcher.png" "$DIR/ic_launcher_foreground.png"
-              echo "Created ${density} icons (${SIZE}x${SIZE})"
-            fi
+            SIZE=${SIZES[$density]}
+            convert "$ICON_SRC" -resize ${SIZE}x${SIZE} "$DIR/ic_launcher.png"
+            cp "$DIR/ic_launcher.png" "$DIR/ic_launcher_round.png"
+            cp "$DIR/ic_launcher.png" "$DIR/ic_launcher_foreground.png"
+            echo "Created ${density} icons (${SIZE}x${SIZE})"
           done
 
-          # Also ensure the adaptive icon XML exists
           DRAWABLE_DIR="android/app/src/main/res/drawable"
           mkdir -p "$DRAWABLE_DIR"
-          if [ ! -f "$DRAWABLE_DIR/ic_launcher_background.xml" ]; then
-            cat > "$DRAWABLE_DIR/ic_launcher_background.xml" << 'EOF'
+          cat > "$DRAWABLE_DIR/ic_launcher_background.xml" << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <shape xmlns:android="http://schemas.android.com/apk/res/android">
             <solid android:color="#0D0D0D"/>
           </shape>
           EOF
-          fi
 
           VALUES_DIR="android/app/src/main/res/mipmap-anydpi-v26"
           mkdir -p "$VALUES_DIR"
-          if [ ! -f "$VALUES_DIR/ic_launcher.xml" ]; then
-            cat > "$VALUES_DIR/ic_launcher.xml" << 'EOF'
+          cat > "$VALUES_DIR/ic_launcher.xml" << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
             <background android:drawable="@drawable/ic_launcher_background"/>
             <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
           </adaptive-icon>
           EOF
-            cp "$VALUES_DIR/ic_launcher.xml" "$VALUES_DIR/ic_launcher_round.xml"
-          fi
-
-      - name: Sync Capacitor
-        run: npx cap sync android
+          cp "$VALUES_DIR/ic_launcher.xml" "$VALUES_DIR/ic_launcher_round.xml"
 
       - name: Auto-increment version code
         run: |
