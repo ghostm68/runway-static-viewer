@@ -36,7 +36,9 @@ jobs:
         run: npm run build
 
       - name: Add Android platform
-        run: npx cap add android || true
+        run: |
+          npx cap add android 2>&1 || echo "Platform may already exist"
+          ls -la android/ || echo "Android directory missing!"
 
       - name: Sync Capacitor
         run: npx cap sync android
