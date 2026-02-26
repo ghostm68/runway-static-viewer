@@ -23,7 +23,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 21
 
       - name: Install dependencies
         run: npm install
@@ -60,6 +60,10 @@ jobs:
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
+
+      - name: Clean Gradle
+        working-directory: android
+        run: ./gradlew clean
 
       - name: Generate icons
         run: |
