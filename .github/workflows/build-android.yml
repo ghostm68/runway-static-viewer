@@ -3,6 +3,7 @@ name: Build Android APK
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -16,6 +17,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: 'npm'
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -23,25 +25,41 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: 8.7
-          cache-disabled: true
-
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build web app
         run: npm run build
 
-      - name: Add Android platform
+      - name: Create Capacitor config if missing
         run: |
-          npx cap add android 2>&1 || echo "Platform may already exist"
-          ls -la android/ || echo "Android directory missing!"
+          if [ ! -f "capacitor.config.ts" ] && [ ! -f "capacitor.config.js" ]; then
+            cat > capacitor.config.ts << 'EOF'
+          import { CapacitorConfig } from '@capacitor/cli';
+
+          const config: CapacitorConfig = {
+            appId: 'com.runway.app',
+            appName: 'Runway Static Viewer',
+            webDir: 'dist',
+            server: {
+              androidScheme: 'https'
+            }
+          };
+
+          export default config;
+          EOF
+            echo "Created capacitor.config.ts"
+          fi
+
+      - name: Add Android platform
+        run: npx cap add android
+        continue-on-error: true
 
       - name: Sync Capacitor
         run: npx cap sync android
+
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
 
       - name: Generate icons
         run: |
@@ -49,9 +67,17 @@ jobs:
           if [ ! -f "$ICON_SRC" ]; then
             ICON_SRC="public/icon.png"
           fi
+          
+          if [ ! -f "$ICON_SRC" ]; then
+            echo "No icon found, creating placeholder"
+            mkdir -p resources
+            convert -size 1024x1024 xc: '#0D0D0D' -pointsize 30 -fill white -gravity center -annotate +0+0 "R" "$ICON_SRC" 2>/dev/null || \
+            (mkdir -p public && cp "$ICON_SRC" public/icon.png 2>/dev/null || echo "Using default")
+            ICON_SRC="public/icon.png"
+          fi
 
           # Install ImageMagick if not available
-          which convert || sudo apt-get install -y imagemagick
+          which convert || sudo apt-get update && sudo apt-get install -y imagemagick
 
           declare -A SIZES=(
             ["mdpi"]=48
@@ -65,10 +91,12 @@ jobs:
             DIR="android/app/src/main/res/mipmap-${density}"
             mkdir -p "$DIR"
             SIZE=${SIZES[$density]}
-            convert "$ICON_SRC" -resize ${SIZE}x${SIZE} "$DIR/ic_launcher.png"
-            cp "$DIR/ic_launcher.png" "$DIR/ic_launcher_round.png"
-            cp "$DIR/ic_launcher.png" "$DIR/ic_launcher_foreground.png"
-            echo "Created ${density} icons (${SIZE}x${SIZE})"
+            if [ -f "$ICON_SRC" ]; then
+              convert "$ICON_SRC" -resize ${SIZE}x${SIZE} "$DIR/ic_launcher.png"
+              cp "$DIR/ic_launcher.png" "$DIR/ic_launcher_round.png"
+              cp "$DIR/ic_launcher.png" "$DIR/ic_launcher_foreground.png"
+              echo "Created ${density} icons (${SIZE}x${SIZE})"
+            fi
           done
 
           DRAWABLE_DIR="android/app/src/main/res/drawable"
@@ -90,6 +118,7 @@ jobs:
           </adaptive-icon>
           EOF
           cp "$VALUES_DIR/ic_launcher.xml" "$VALUES_DIR/ic_launcher_round.xml"
+        shell: bash
 
       - name: Auto-increment version code
         run: |
@@ -98,10 +127,11 @@ jobs:
 
       - name: Build debug APK
         working-directory: android
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: runway-debug-v${{ github.run_number }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
